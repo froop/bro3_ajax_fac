@@ -1,5 +1,6 @@
 // ==UserScript==
 // @name           bro3_ajax_fac
+// @version        0.1.8
 // @namespace      froo
 // @include        http://*.3gokushi.jp/village.php*
 // @include        http://*.1kibaku.jp/village.php*
@@ -9,7 +10,7 @@
 
 // 都市画面の施設建設をAjaxを使った非同期通信で行います。
 // 施設タイルの右クリック時に表示されるメニューで操作します。
-// Copyright (C) 2010 froo (http://blog.livedoor.jp/froo/)
+// Copyright (C) 2010-2012 froo (http://blog.livedoor.jp/froo/)
 
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
@@ -32,7 +33,7 @@
 "use strict";
 (function () {
 	var VERSION, LOADING_ANIME;
-	VERSION = "0.1.7";
+	VERSION = "0.1.8";
 	
 	//mixi鯖障害回避用: 広告iframe内で呼び出されたら無視
 	var container = document.evaluate('//*[@id="container"]',
@@ -56,7 +57,7 @@
 'xTAUkGCbtgENBMJAEJsxgMLWzpEAACH5BAAKAAcALAAAAAAQABAAAAMyCLrc/jDKSatlQtScKdce'+
 'CAjDII7HcQ4EMTCpyrCuUBjCYRgHVtqlAiB1YhiCnlsRkAAAOwAAAAAAAAAAAA==';
 	
-	//URLのクエリーからパラメータ値を取得
+	// URLのクエリーからパラメータ値を取得
 	function getUrlParameter(url, key) {
 		var i, str, params, keyVal;
 		
@@ -71,6 +72,15 @@
 			if (keyVal[0] === key && keyVal.length === 2) {
 				return decodeURIComponent(keyVal[1]);
 			}
+		}
+		return "";
+	}
+
+	// Cookieから値を取得
+	function getCookie(key) {
+		var i, pair, pairs = document.cookie.split('; ');
+		for (i = 0; pair = pairs[i] && pairs[i].split('='); i++) {
+			if (pair[0] === key) return pair[1] || '';
 		}
 		return "";
 	}
@@ -92,9 +102,9 @@
 	// レベルアップリクエスト送信(Ajax)
 	function sendLvupRequest(query, times) {
 		var lvupUrl, mapX, mapY, mapIdx;
-		lvupUrl = "/facility/build.php?" + query;
-		mapX = parseInt(getUrlParameter(lvupUrl, "x"), 10);
-		mapY = parseInt(getUrlParameter(lvupUrl, "y"), 10);
+		lvupUrl = "/facility/build.php";
+		mapX = parseInt(query.x, 10);
+		mapY = parseInt(query.y, 10);
 		mapIdx = (101 + mapX * 7 + mapY).toString().substr(-2);
 		
 		// 施設タイルにLoading表示
@@ -136,9 +146,9 @@
 		
 		// Ajax通信実行
 		if (times === 2) {
-			$.get(lvupUrl);
+			$.post(lvupUrl, query);
 		}
-		$("#actionLogBase").load(lvupUrl + " #actionLog", 
+		$("#actionLogBase").load(lvupUrl + " #actionLog", query,
 			function (i) {
 				return function () {
 					if (unsafeWindow.count_down_timer) {
@@ -160,7 +170,7 @@
 		$("#lvupItem" + index)
 			.addClass("lvupItem")
 			.attr({ 
-				title: "施設の建設を指示します: " + query,
+				title: "施設の建設を指示します: " + JSON.stringify(query),
 				innerHTML: label
 			})
 			.unbind("click")
@@ -178,13 +188,31 @@
 		
 		$("#lvupList").text("");
 		
-		query = "x=" + getUrlParameter(target.href, "x") + 
-			"&y=" + getUrlParameter(target.href, "y");
+		query = {
+			x: getUrlParameter(target.href, "x"),
+			y: getUrlParameter(target.href, "y"),
+			ssid: getCookie("SSID")
+		};
 		
 		facilityName = target.alt.replace(/\sLV\.[0-9]+$/, "");
 		
 		appendLvupItem(1, "建設[" + facilityName + "]", query, 1);
 		appendLvupItem(2, "建設[" + facilityName + "]×2", query, 2);
+	}
+
+	// 施設Lvupのクエリーデータを取得
+	function getLvupQuery(lvupLink) {
+		var query, formName;
+		formName = (lvupLink.onclick.toString().match(
+			/sendFaciltyBuildData\(['"]([a-zA-Z0-9_]+)['"]\)/)||[])[1];
+		if (formName) {
+			query = {};
+			$($("#facilityWork form[name='" + formName + "']").serializeArray())
+				.each(function(i, v) {
+					query[v.name] = v.value;
+				});
+		}
+		return query;
 	}
 
 	// 施設建設リスト作成
@@ -196,13 +224,13 @@
 		// サーバーからロードした施設画面の情報を取得
 		tables = $("#facilityWork .commonTables").get();
 		for (i = 0; i < tables.length; i++) {
-			query = "";
+			query = undefined;
 			
 			// 施設レベルアップのURLを取得
 			tables[i].id = "workTable" + i;
 			lvupLink = $("#workTable" + i + " .lvupFacility .main a").get(0);
 			if (lvupLink) {
-				query = lvupLink.href.replace(/^.*\?/, "");
+				query = getLvupQuery(lvupLink);
 			}
 			if (!query) {
 				if (i === 0) {
@@ -244,7 +272,7 @@
 		
 		// Ajaxで施設画面をロード
 		$("#facilityWork")
-			.load(target.href + " #gray02Wrapper", createFacilityList);
+			.load(target.href + " #whiteWrapper", createFacilityList);
 	}
 
 	// 施設選択メニュー表示
